@@ -1,0 +1,44 @@
+name: Secure Delivery to Azure App Service
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  config-gate:
+    name: Pre-deploy configuration check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Verify the HTTPS-only baseline in the deploy config
+        run: |
+          ENFORCE=$(node -p "require('./deploy/config.json').enforceHttps")
+          echo "Declared enforceHttps: ${ENFORCE}"
+          if [ "${ENFORCE}" != "true" ]; then
+            echo "::error::Configuration check failed. The deploy config does not meet the HTTPS-only baseline."
+            echo "Set \"enforceHttps\" to true in deploy/config.json, commit the change, and run the workflow again."
+            exit 1
+          fi
+          echo "Configuration check passed. The HTTPS-only baseline is met."
+
+  deploy:
+    name: Deploy to App Service
+    needs: config-gate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Deploy the site to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
+          package: ./src
